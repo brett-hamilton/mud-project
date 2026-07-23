@@ -1,0 +1,5 @@
+{
+  "name": "mud-project",
+  "private": true,
+  "workspaces": ["server", "client", "shared"]
+}
