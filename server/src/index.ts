@@ -3,9 +3,13 @@ import express from "express";
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { WorldMap } from "./game/world/WorldMap";
+import type { Room } from "shared/types/world";
 import { getOrCreatePlayer, updatePlayerRoom } from "./db/playerRepository";
 import type { ClientMessage, ServerMessage } from "shared/types/messages";
 import { parseCommand } from "shared/parser/commandParser";
+import { MonsterManager } from "./game/combat/MonsterManager";
+import { resolveAttack } from "./game/combat/CombatSystem";
+import { monsterTemplates } from "./game/combat/monsterTemplates";
 
 const app = express();
 app.use(express.json());
@@ -19,9 +23,14 @@ interface ConnectedPlayer {
   playerId: number;
   playerName: string;
   currentRoomId: string;
+  currentHealth: number;
+  maxHealth: number;
+  attackPower: number;
 }
 
 const connectedPlayers = new Map<WebSocket, ConnectedPlayer>();
+const monsterManager = new MonsterManager();
+monsterManager.spawn("goblin", "dark_forest_path", "goblin_1"); // hardcoded test spawn
 
 function send(socket: WebSocket, message: ServerMessage) {
   socket.send(JSON.stringify(message));
@@ -35,6 +44,10 @@ function broadcastToRoom(roomId: string, message: ServerMessage, excludeSocket?:
   }
 }
 
+function roomToPayload(room: Room) {
+  return { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits) };
+}
+
 wss.on("connection", (socket) => {
   socket.on("message", async (data) => {
     const message: ClientMessage = JSON.parse(data.toString());
@@ -45,7 +58,10 @@ wss.on("connection", (socket) => {
         socket,
         playerId: player.id,
         playerName: player.name,
-        currentRoomId: player.current_room_id
+        currentRoomId: player.current_room_id,
+        currentHealth: player.current_health,
+        maxHealth: player.max_health,
+        attackPower: player.attack_power
       });
 
       const room = worldMap.getRoom(player.current_room_id)!;
@@ -96,6 +112,44 @@ wss.on("connection", (socket) => {
 
         case "SAY": {
           broadcastToRoom(connected.currentRoomId, { type: "PLAYER_SAID", playerName: connected.playerName, message: command.message });
+          break;
+        }
+
+        case "ATTACK": {
+          const monster = monsterManager.getInRoom(connected.currentRoomId)
+            .find(m => monsterTemplates[m.templateId].name.toLowerCase() === command.target.toLowerCase());
+
+          if (!monster) {
+            send(socket, { type: "ERROR", message: `You don't see a "${command.target}" here.` });
+            break;
+          }
+
+          const template = monsterTemplates[monster.templateId];
+          const result = resolveAttack(connected.attackPower, template.defense, monster.currentHealth);
+          monster.currentHealth -= result.damageDealt;
+
+          send(socket, { type: "COMBAT_LOG", message: `You hit the ${template.name} for ${result.damageDealt} damage.` });
+          broadcastToRoom(connected.currentRoomId, { type: "COMBAT_LOG", message: `${connected.playerName} attacks the ${template.name}.` }, socket);
+
+          if (result.targetDied) {
+            monsterManager.remove(monster.instanceId);
+            send(socket, { type: "COMBAT_LOG", message: `You defeated the ${template.name}!` });
+            broadcastToRoom(connected.currentRoomId, { type: "COMBAT_LOG", message: `${connected.playerName} defeats the ${template.name}!` }, socket);
+            break;
+          }
+
+          // monster attacks back
+          const counter = resolveAttack(template.attackPower, 0, connected.currentHealth);
+          connected.currentHealth -= counter.damageDealt;
+          send(socket, { type: "COMBAT_LOG", message: `The ${template.name} hits you for ${counter.damageDealt} damage.` });
+
+          if (connected.currentHealth <= 0) {
+            connected.currentHealth = connected.maxHealth; // simple respawn: full heal
+            connected.currentRoomId = "dark_forest_entrance"; // respawn point
+            await updatePlayerRoom(connected.playerId, connected.currentRoomId);
+            send(socket, { type: "COMBAT_LOG", message: `You have died and respawned at the entrance.` });
+            send(socket, { type: "ROOM_UPDATE", room: roomToPayload(worldMap.getRoom(connected.currentRoomId)!) });
+          }
           break;
         }
 

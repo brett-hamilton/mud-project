@@ -14,9 +14,19 @@ export interface SayCommand {
   message: string;
 }
 
+export interface AttackCommand {
+  type: "ATTACK";
+  target: string;
+}
+
 export interface UnknownCommand {
   type: "UNKNOWN";
   raw: string;
 }
 
-export type ParsedCommand = MoveCommand | LookCommand | SayCommand | UnknownCommand;
+export type ParsedCommand = 
+| MoveCommand 
+| LookCommand 
+| SayCommand 
+| AttackCommand
+| UnknownCommand;

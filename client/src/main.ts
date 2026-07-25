@@ -51,6 +51,9 @@ function handleServerMessage(message: ServerMessage) {
     case "PLAYER_SAID":
       log(`${message.playerName} says: "${message.message}"`, "player-event");
       break;
+    case "COMBAT_LOG":
+      log(message.message, "combat");
+      break;
     case "ERROR":
       log(message.message, "error");
       break;

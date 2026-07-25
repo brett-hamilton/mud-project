@@ -41,9 +41,15 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface CombatLogMessage {
+  type: "COMBAT_LOG";
+  message: string;
+}
+
 export type ServerMessage = 
   | RoomUpdateMessage
   | PlayerEnteredMessage 
   | PlayerLeftMessage 
   | PlayerSaidMessage 
-  | ErrorMessage;
+  | ErrorMessage
+  | CombatLogMessage;

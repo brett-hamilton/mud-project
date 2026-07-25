@@ -23,6 +23,7 @@ body {
 #output .system { color: #6a9955; }
 #output .room-name { color: #4ec9b0; font-weight: bold; }
 #output .player-event { color: #dcdcaa; }
+#output .combat { color: #ce9178; }
 #output .error { color: #f14c4c; }
 
 #command-form {

@@ -28,6 +28,10 @@ export function parseCommand(raw: string): ParsedCommand {
     case "say":
       return { type: "SAY", message: argument };
 
+    case "attack":
+    case "kill":
+        return argument ? { type: "ATTACK", target: argument } : { type: "UNKNOWN", raw };
+
     default:
       return { type: "UNKNOWN", raw };
   }
