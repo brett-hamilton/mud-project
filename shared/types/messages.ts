@@ -3,12 +3,12 @@ export interface JoinMessage {
   playerName: string;
 }
 
-export interface MoveMessage {
-  type: "MOVE";
-  direction: "north" | "south" | "east" | "west" | "up" | "down";
+export interface CommandMessage {
+  type: "COMMAND";
+  text: string;
 }
 
-export type ClientMessage = JoinMessage | MoveMessage;
+export type ClientMessage = JoinMessage | CommandMessage;
 
 export interface RoomUpdateMessage {
   type: "ROOM_UPDATE";
@@ -30,4 +30,20 @@ export interface PlayerLeftMessage {
   playerName: string;
 }
 
-export type ServerMessage = RoomUpdateMessage | PlayerEnteredMessage | PlayerLeftMessage;
+export interface PlayerSaidMessage {
+  type: "PLAYER_SAID";
+  playerName: string;
+  message: string;
+}
+
+export interface ErrorMessage {
+  type: "ERROR";
+  message: string;
+}
+
+export type ServerMessage = 
+  | RoomUpdateMessage
+  | PlayerEnteredMessage 
+  | PlayerLeftMessage 
+  | PlayerSaidMessage 
+  | ErrorMessage;

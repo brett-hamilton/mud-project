@@ -34,20 +34,25 @@ function send(message: ClientMessage) {
   socket.send(JSON.stringify(message));
 }
 
+// client/src/main.ts — extend handleServerMessage
 function handleServerMessage(message: ServerMessage) {
   switch (message.type) {
     case "ROOM_UPDATE":
       log(message.room.name, "room-name");
       log(message.room.description);
-      if (message.room.exits.length > 0) {
-        log(`Exits: ${message.room.exits.join(", ")}`, "system");
-      }
+      if (message.room.exits.length > 0) log(`Exits: ${message.room.exits.join(", ")}`, "system");
       break;
     case "PLAYER_ENTERED":
       log(`${message.playerName} arrives.`, "player-event");
       break;
     case "PLAYER_LEFT":
       log(`${message.playerName} leaves.`, "player-event");
+      break;
+    case "PLAYER_SAID":
+      log(`${message.playerName} says: "${message.message}"`, "player-event");
+      break;
+    case "ERROR":
+      log(message.message, "error");
       break;
   }
 }
@@ -56,14 +61,10 @@ const directions = ["north", "south", "east", "west", "up", "down"];
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
-  const commandText = input.value.trim().toLowerCase();
+  const text = input.value.trim();
   input.value = "";
+  if (!text) return;
 
-  if (!commandText) return;
-
-  if (directions.includes(commandText)) {
-    send({ type: "MOVE", direction: commandText as any });
-  } else {
-    log(`Unknown command: ${commandText}`, "error");
-  }
+  log(`> ${text}`, "system");
+  send({ type: "COMMAND", text });
 });

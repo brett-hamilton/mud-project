@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { WorldMap } from "./game/world/WorldMap";
 import { getOrCreatePlayer, updatePlayerRoom } from "./db/playerRepository";
 import type { ClientMessage, ServerMessage } from "shared/types/messages";
+import { parseCommand } from "shared/parser/commandParser";
 
 const app = express();
 app.use(express.json());
@@ -56,29 +57,53 @@ wss.on("connection", (socket) => {
       broadcastToRoom(room.id, { type: "PLAYER_ENTERED", playerName: player.name }, socket);
     }
 
-    if (message.type === "MOVE") {
+    if (message.type === "COMMAND") {
       const connected = connectedPlayers.get(socket);
-      if (!connected) return; // hasn't joined yet
+      if (!connected) return;
 
-      const oldRoomId = connected.currentRoomId;
-      const newRoom = worldMap.getExitRoom(oldRoomId, message.direction);
+      const command = parseCommand(message.text);
 
-      if (!newRoom) {
-        send(socket, { type: "ROOM_UPDATE", room: { id: oldRoomId, name: "", description: "There is no exit that way.", exits: [] } });
-        return;
+      switch (command.type) {
+        case "MOVE": {
+          const oldRoomId = connected.currentRoomId;
+          const newRoom = worldMap.getExitRoom(oldRoomId, command.direction);
+
+          if (!newRoom) {
+            send(socket, { type: "ROOM_UPDATE", room: { id: oldRoomId, name: "", description: "There is no exit that way.", exits: [] } });
+            return;
+          }
+
+          connected.currentRoomId = newRoom.id;
+          await updatePlayerRoom(connected.playerId, newRoom.id);
+
+          broadcastToRoom(oldRoomId, { type: "PLAYER_LEFT", playerName: connected.playerName }, socket);
+          send(socket, {
+            type: "ROOM_UPDATE",
+            room: { id: newRoom.id, name: newRoom.name, description: newRoom.description, exits: Object.keys(newRoom.exits) }
+          });
+          broadcastToRoom(newRoom.id, { type: "PLAYER_ENTERED", playerName: connected.playerName }, socket);
+          break;
+        }
+
+        case "LOOK": {
+          const room = worldMap.getRoom(connected.currentRoomId)!;
+          send(socket, {
+            type: "ROOM_UPDATE",
+            room: { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits) }
+          });
+          break;
+        }
+
+        case "SAY": {
+          broadcastToRoom(connected.currentRoomId, { type: "PLAYER_SAID", playerName: connected.playerName, message: command.message });
+          break;
+        }
+
+        case "UNKNOWN": {
+          send(socket, { type: "ERROR", message: `Unknown command: "${command.raw}"` });
+          break;
+        }
       }
-
-      connected.currentRoomId = newRoom.id;
-      await updatePlayerRoom(connected.playerId, newRoom.id);
-
-      broadcastToRoom(oldRoomId, { type: "PLAYER_LEFT", playerName: connected.playerName }, socket);
-
-      send(socket, {
-        type: "ROOM_UPDATE",
-        room: { id: newRoom.id, name: newRoom.name, description: newRoom.description, exits: Object.keys(newRoom.exits) }
-      });
-
-      broadcastToRoom(newRoom.id, { type: "PLAYER_ENTERED", playerName: connected.playerName }, socket);
     }
   });
 
