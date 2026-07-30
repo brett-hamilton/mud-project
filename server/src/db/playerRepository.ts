@@ -25,3 +25,10 @@ export async function updatePlayerRoom(playerId: number, roomId: string) {
     [roomId, playerId]
   );
 }
+
+export async function updatePlayerProgression(playerId: number, level: number, xp: number, maxHealth: number, attackPower: number) {
+  await pool.query(
+    "UPDATE players SET level = $1, xp = $2, max_health = $3, attack_power = $4 WHERE id = $5",
+    [level, xp, maxHealth, attackPower, playerId]
+  );
+}

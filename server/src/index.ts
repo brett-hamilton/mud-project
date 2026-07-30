@@ -10,6 +10,8 @@ import { parseCommand } from "shared/parser/commandParser";
 import { MonsterManager } from "./game/combat/MonsterManager";
 import { resolveAttack } from "./game/combat/CombatSystem";
 import { monsterTemplates } from "./game/combat/monsterTemplates";
+import { applyXp } from "./game/progression/leveling";
+import { updatePlayerProgression } from "./db/playerRepository";
 
 const app = express();
 app.use(express.json());
@@ -26,6 +28,8 @@ interface ConnectedPlayer {
   currentHealth: number;
   maxHealth: number;
   attackPower: number;
+  level: number;
+  xp: number;
 }
 
 const connectedPlayers = new Map<WebSocket, ConnectedPlayer>();
@@ -75,7 +79,9 @@ wss.on("connection", (socket) => {
         currentRoomId: player.current_room_id,
         currentHealth: player.current_health,
         maxHealth: player.max_health,
-        attackPower: player.attack_power
+        attackPower: player.attack_power,
+        level: player.level,
+        xp: player.xp
       });
 
       const room = worldMap.getRoom(player.current_room_id)!;
@@ -152,6 +158,21 @@ wss.on("connection", (socket) => {
             monsterManager.remove(monster.instanceId);
             send(socket, { type: "COMBAT_LOG", message: `You defeated the ${template.name}!` });
             broadcastToRoom(connected.currentRoomId, { type: "COMBAT_LOG", message: `${connected.playerName} defeats the ${template.name}!` }, socket);
+            
+            const progression = applyXp(connected.level, connected.xp, template.xpReward, connected.maxHealth, connected.attackPower);
+            connected.level = progression.newLevel;
+            connected.xp = progression.newXp;
+            connected.maxHealth = progression.newMaxHealth;
+            connected.attackPower = progression.newAttackPower;
+
+            await updatePlayerProgression(connected.playerId, connected.level, connected.xp, connected.maxHealth, connected.attackPower);
+
+            send(socket, { type: "COMBAT_LOG", message: `You gain ${template.xpReward} XP.` });
+
+            if (progression.leveledUp) {
+              connected.currentHealth = connected.maxHealth; // full heal on level up, classic RPG feel
+              send(socket, { type: "COMBAT_LOG", message: `You leveled up! You are now level ${connected.level}.` });
+            }
             break;
           }
 
