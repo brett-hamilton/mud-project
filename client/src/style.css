@@ -25,6 +25,7 @@ body {
 #output .player-event { color: #dcdcaa; }
 #output .combat { color: #ce9178; }
 #output .error { color: #f14c4c; }
+#output .monster { color: #f44747; }
 
 #command-form {
   display: flex;

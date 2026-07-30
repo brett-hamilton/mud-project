@@ -40,6 +40,7 @@ function handleServerMessage(message: ServerMessage) {
     case "ROOM_UPDATE":
       log(message.room.name, "room-name");
       log(message.room.description);
+      if (message.room.monsters.length > 0) log(`You see: ${message.room.monsters.join(", ")}`, "monster");
       if (message.room.exits.length > 0) log(`Exits: ${message.room.exits.join(", ")}`, "system");
       break;
     case "PLAYER_ENTERED":

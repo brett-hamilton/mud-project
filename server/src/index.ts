@@ -30,7 +30,11 @@ interface ConnectedPlayer {
 
 const connectedPlayers = new Map<WebSocket, ConnectedPlayer>();
 const monsterManager = new MonsterManager();
-monsterManager.spawn("goblin", "dark_forest_path", "goblin_1"); // hardcoded test spawn
+
+// Hardcoded monster spawns for testing
+monsterManager.spawn("goblin", "dark_forest_path", "goblin_1");
+monsterManager.spawn("troll", "dark_forest_clearing", "troll_1");
+
 
 function send(socket: WebSocket, message: ServerMessage) {
   socket.send(JSON.stringify(message));
@@ -44,8 +48,18 @@ function broadcastToRoom(roomId: string, message: ServerMessage, excludeSocket?:
   }
 }
 
-function roomToPayload(room: Room) {
-  return { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits) };
+function roomToPayload(room: Room, monsterNames: string[]) {
+  return { 
+    id: room.id, 
+    name: room.name, 
+    description: room.description, 
+    exits: Object.keys(room.exits) ,
+    monsters: monsterNames
+  };
+}
+
+function getMonsterNamesInRoom(roomId: string): string[] {
+  return monsterManager.getInRoom(roomId).map(m => monsterTemplates[m.templateId].name);
 }
 
 wss.on("connection", (socket) => {
@@ -67,7 +81,7 @@ wss.on("connection", (socket) => {
       const room = worldMap.getRoom(player.current_room_id)!;
       send(socket, {
         type: "ROOM_UPDATE",
-        room: { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits) }
+        room: { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits), monsters: getMonsterNamesInRoom(room.id) }
       });
 
       broadcastToRoom(room.id, { type: "PLAYER_ENTERED", playerName: player.name }, socket);
@@ -85,7 +99,10 @@ wss.on("connection", (socket) => {
           const newRoom = worldMap.getExitRoom(oldRoomId, command.direction);
 
           if (!newRoom) {
-            send(socket, { type: "ROOM_UPDATE", room: { id: oldRoomId, name: "", description: "There is no exit that way.", exits: [] } });
+            send(socket, { type: "ROOM_UPDATE", room: {
+              id: oldRoomId, name: "", description: "There is no exit that way.", exits: [],
+              monsters: getMonsterNamesInRoom(oldRoomId)
+            } });
             return;
           }
 
@@ -95,7 +112,7 @@ wss.on("connection", (socket) => {
           broadcastToRoom(oldRoomId, { type: "PLAYER_LEFT", playerName: connected.playerName }, socket);
           send(socket, {
             type: "ROOM_UPDATE",
-            room: { id: newRoom.id, name: newRoom.name, description: newRoom.description, exits: Object.keys(newRoom.exits) }
+            room: { id: newRoom.id, name: newRoom.name, description: newRoom.description, exits: Object.keys(newRoom.exits), monsters: getMonsterNamesInRoom(newRoom.id) }
           });
           broadcastToRoom(newRoom.id, { type: "PLAYER_ENTERED", playerName: connected.playerName }, socket);
           break;
@@ -105,7 +122,7 @@ wss.on("connection", (socket) => {
           const room = worldMap.getRoom(connected.currentRoomId)!;
           send(socket, {
             type: "ROOM_UPDATE",
-            room: { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits) }
+            room: { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits), monsters: getMonsterNamesInRoom(room.id) }
           });
           break;
         }
@@ -148,7 +165,7 @@ wss.on("connection", (socket) => {
             connected.currentRoomId = "dark_forest_entrance"; // respawn point
             await updatePlayerRoom(connected.playerId, connected.currentRoomId);
             send(socket, { type: "COMBAT_LOG", message: `You have died and respawned at the entrance.` });
-            send(socket, { type: "ROOM_UPDATE", room: roomToPayload(worldMap.getRoom(connected.currentRoomId)!) });
+            send(socket, { type: "ROOM_UPDATE", room: roomToPayload(worldMap.getRoom(connected.currentRoomId)!, getMonsterNamesInRoom(connected.currentRoomId)) });
           }
           break;
         }

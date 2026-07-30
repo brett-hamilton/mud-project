@@ -8,5 +8,13 @@ export const monsterTemplates: Record<string, MonsterTemplate> = {
     attackPower: 4,
     defense: 1,
     xpReward: 10
+  },
+  troll: {
+    id: "troll",
+    name: "Troll",
+    maxHealth: 40,
+    attackPower: 8,
+    defense: 3,
+    xpReward: 25
   }
 };

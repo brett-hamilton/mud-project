@@ -17,6 +17,7 @@ export interface RoomUpdateMessage {
     name: string;
     description: string;
     exits: string[];
+    monsters: string[];
   };
 }
 
