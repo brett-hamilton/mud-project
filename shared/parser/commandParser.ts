@@ -39,6 +39,11 @@ export function parseCommand(raw: string): ParsedCommand {
     case "i":
       return { type: "INVENTORY" };
 
+    case "equip":
+    case "wear":
+    case "wield":
+      return argument ? { type: "EQUIP", target: argument } : { type: "UNKNOWN", raw };
+
     default:
       return { type: "UNKNOWN", raw };
   }

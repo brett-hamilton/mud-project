@@ -32,3 +32,10 @@ export async function updatePlayerProgression(playerId: number, level: number, x
     [level, xp, maxHealth, attackPower, playerId]
   );
 }
+
+export async function updateEquipment(playerId: number, weaponId: string | null, armorId: string | null) {
+  await pool.query(
+    "UPDATE players SET equipped_weapon = $1, equipped_armor = $2 WHERE id = $3",
+    [weaponId, armorId, playerId]
+  );
+}

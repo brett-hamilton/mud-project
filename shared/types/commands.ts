@@ -28,6 +28,11 @@ export interface InventoryCommand {
   type: "INVENTORY"; 
 }
 
+export interface EquipCommand { 
+  type: "EQUIP"; 
+  target: string; 
+}
+
 export interface UnknownCommand {
   type: "UNKNOWN";
   raw: string;
@@ -40,4 +45,5 @@ export type ParsedCommand =
 | AttackCommand
 | TakeCommand
 | InventoryCommand
+| EquipCommand
 | UnknownCommand;

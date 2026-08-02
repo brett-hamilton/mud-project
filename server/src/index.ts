@@ -4,7 +4,7 @@ import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { WorldMap } from "./game/world/WorldMap";
 import type { Room } from "shared/types/world";
-import { getOrCreatePlayer, updatePlayerRoom } from "./db/playerRepository";
+import { getOrCreatePlayer, updatePlayerRoom, updateEquipment } from "./db/playerRepository";
 import { addItemToInventory, getInventory } from "./db/inventoryRepository";
 import type { ClientMessage, ServerMessage } from "shared/types/messages";
 import { parseCommand } from "shared/parser/commandParser";
@@ -16,6 +16,7 @@ import { updatePlayerProgression } from "./db/playerRepository";
 import { rollLoot } from "./game/items/lootRoll";
 import { RoomItemManager } from "./game/items/RoomItemManager";
 import { itemTemplates } from "./game/items/itemTemplates";
+import { getEffectiveAttack, getEffectiveDefense } from "./game/combat/effectiveStats";
 
 const app = express();
 app.use(express.json());
@@ -34,6 +35,8 @@ interface ConnectedPlayer {
   attackPower: number;
   level: number;
   xp: number;
+  equippedWeapon: string | null;
+  equippedArmor: string | null;
 }
 
 const connectedPlayers = new Map<WebSocket, ConnectedPlayer>();
@@ -91,7 +94,9 @@ wss.on("connection", (socket) => {
         maxHealth: player.max_health,
         attackPower: player.attack_power,
         level: player.level,
-        xp: player.xp
+        xp: player.xp,
+        equippedWeapon: player.equipped_weapon,
+        equippedArmor: player.equipped_armor
       });
 
       const room = worldMap.getRoom(player.current_room_id)!;
@@ -169,6 +174,29 @@ wss.on("connection", (socket) => {
           break;
         }
 
+        case "EQUIP": {
+          const inventoryItemIds = await getInventory(connected.playerId);
+          const matchId = inventoryItemIds.find(id => itemTemplates[id].name.toLowerCase() === command.target.toLowerCase());
+
+          if (!matchId) {
+            send(socket, { type: "ERROR", message: `You don't have a "${command.target}".` });
+            break;
+          }
+
+          const item = itemTemplates[matchId];
+          if (!item.equipSlot) {
+            send(socket, { type: "ERROR", message: `You can't equip the ${item.name}.` });
+            break;
+          }
+
+          if (item.equipSlot === "weapon") connected.equippedWeapon = matchId;
+          if (item.equipSlot === "armor") connected.equippedArmor = matchId;
+
+          await updateEquipment(connected.playerId, connected.equippedWeapon, connected.equippedArmor);
+          send(socket, { type: "COMBAT_LOG", message: `You equip the ${item.name}.` });
+          break;
+        }
+
         case "ATTACK": {
           const monster = monsterManager.getInRoom(connected.currentRoomId)
             .find(m => monsterTemplates[m.templateId].name.toLowerCase() === command.target.toLowerCase());
@@ -179,7 +207,8 @@ wss.on("connection", (socket) => {
           }
 
           const template = monsterTemplates[monster.templateId];
-          const result = resolveAttack(connected.attackPower, template.defense, monster.currentHealth);
+          const effectiveAttack = getEffectiveAttack(connected.attackPower, connected.equippedWeapon);
+          const result = resolveAttack(effectiveAttack, template.defense, monster.currentHealth);
           monster.currentHealth -= result.damageDealt;
 
           send(socket, { type: "COMBAT_LOG", message: `You hit the ${template.name} for ${result.damageDealt} damage.` });
@@ -218,7 +247,8 @@ wss.on("connection", (socket) => {
           }
 
           // monster attacks back
-          const counter = resolveAttack(template.attackPower, 0, connected.currentHealth);
+          const playerDefense = getEffectiveDefense(connected.equippedArmor);
+          const counter = resolveAttack(template.attackPower, playerDefense, connected.currentHealth);
           connected.currentHealth -= counter.damageDealt;
           send(socket, { type: "COMBAT_LOG", message: `The ${template.name} hits you for ${counter.damageDealt} damage.` });
 
