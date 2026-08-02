@@ -19,6 +19,15 @@ export interface AttackCommand {
   target: string;
 }
 
+export interface TakeCommand { 
+  type: "TAKE";
+  target: string; 
+}
+
+export interface InventoryCommand { 
+  type: "INVENTORY"; 
+}
+
 export interface UnknownCommand {
   type: "UNKNOWN";
   raw: string;
@@ -29,4 +38,6 @@ export type ParsedCommand =
 | LookCommand 
 | SayCommand 
 | AttackCommand
+| TakeCommand
+| InventoryCommand
 | UnknownCommand;

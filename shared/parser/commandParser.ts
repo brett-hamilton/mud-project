@@ -32,6 +32,13 @@ export function parseCommand(raw: string): ParsedCommand {
     case "kill":
         return argument ? { type: "ATTACK", target: argument } : { type: "UNKNOWN", raw };
 
+    case "take":
+    case "get":
+      return argument ? { type: "TAKE", target: argument } : { type: "UNKNOWN", raw };
+    case "inventory":
+    case "i":
+      return { type: "INVENTORY" };
+
     default:
       return { type: "UNKNOWN", raw };
   }

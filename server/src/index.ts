@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { WorldMap } from "./game/world/WorldMap";
 import type { Room } from "shared/types/world";
 import { getOrCreatePlayer, updatePlayerRoom } from "./db/playerRepository";
+import { addItemToInventory, getInventory } from "./db/inventoryRepository";
 import type { ClientMessage, ServerMessage } from "shared/types/messages";
 import { parseCommand } from "shared/parser/commandParser";
 import { MonsterManager } from "./game/combat/MonsterManager";
@@ -12,6 +13,9 @@ import { resolveAttack } from "./game/combat/CombatSystem";
 import { monsterTemplates } from "./game/combat/monsterTemplates";
 import { applyXp } from "./game/progression/leveling";
 import { updatePlayerProgression } from "./db/playerRepository";
+import { rollLoot } from "./game/items/lootRoll";
+import { RoomItemManager } from "./game/items/RoomItemManager";
+import { itemTemplates } from "./game/items/itemTemplates";
 
 const app = express();
 app.use(express.json());
@@ -34,6 +38,7 @@ interface ConnectedPlayer {
 
 const connectedPlayers = new Map<WebSocket, ConnectedPlayer>();
 const monsterManager = new MonsterManager();
+const roomItemManager = new RoomItemManager();
 
 // Hardcoded monster spawns for testing
 monsterManager.spawn("goblin", "dark_forest_path", "goblin_1");
@@ -52,18 +57,23 @@ function broadcastToRoom(roomId: string, message: ServerMessage, excludeSocket?:
   }
 }
 
-function roomToPayload(room: Room, monsterNames: string[]) {
+function roomToPayload(room: Room, monsterNames: string[], items: string[]) {
   return { 
     id: room.id, 
     name: room.name, 
     description: room.description, 
-    exits: Object.keys(room.exits) ,
-    monsters: monsterNames
+    exits: Object.keys(room.exits),
+    monsters: monsterNames,
+    items: items
   };
 }
 
 function getMonsterNamesInRoom(roomId: string): string[] {
   return monsterManager.getInRoom(roomId).map(m => monsterTemplates[m.templateId].name);
+}
+
+function getItemNamesInRoom(roomId: string): string[] {
+  return roomItemManager.getItemsInRoom(roomId).map(templateId => itemTemplates[templateId].name);
 }
 
 wss.on("connection", (socket) => {
@@ -87,7 +97,14 @@ wss.on("connection", (socket) => {
       const room = worldMap.getRoom(player.current_room_id)!;
       send(socket, {
         type: "ROOM_UPDATE",
-        room: { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits), monsters: getMonsterNamesInRoom(room.id) }
+        room: { 
+          id: room.id, 
+          name: room.name, 
+          description: room.description, 
+          exits: Object.keys(room.exits), 
+          monsters: getMonsterNamesInRoom(room.id), 
+          items: getItemNamesInRoom(room.id)
+        }
       });
 
       broadcastToRoom(room.id, { type: "PLAYER_ENTERED", playerName: player.name }, socket);
@@ -107,7 +124,8 @@ wss.on("connection", (socket) => {
           if (!newRoom) {
             send(socket, { type: "ROOM_UPDATE", room: {
               id: oldRoomId, name: "", description: "There is no exit that way.", exits: [],
-              monsters: getMonsterNamesInRoom(oldRoomId)
+              monsters: getMonsterNamesInRoom(oldRoomId), 
+              items: getItemNamesInRoom(oldRoomId)
             } });
             return;
           }
@@ -118,7 +136,13 @@ wss.on("connection", (socket) => {
           broadcastToRoom(oldRoomId, { type: "PLAYER_LEFT", playerName: connected.playerName }, socket);
           send(socket, {
             type: "ROOM_UPDATE",
-            room: { id: newRoom.id, name: newRoom.name, description: newRoom.description, exits: Object.keys(newRoom.exits), monsters: getMonsterNamesInRoom(newRoom.id) }
+            room: { 
+              id: newRoom.id, 
+              name: newRoom.name, 
+              description: newRoom.description, 
+              exits: Object.keys(newRoom.exits), 
+              monsters: getMonsterNamesInRoom(newRoom.id), 
+              items: getItemNamesInRoom(newRoom.id) }
           });
           broadcastToRoom(newRoom.id, { type: "PLAYER_ENTERED", playerName: connected.playerName }, socket);
           break;
@@ -128,7 +152,14 @@ wss.on("connection", (socket) => {
           const room = worldMap.getRoom(connected.currentRoomId)!;
           send(socket, {
             type: "ROOM_UPDATE",
-            room: { id: room.id, name: room.name, description: room.description, exits: Object.keys(room.exits), monsters: getMonsterNamesInRoom(room.id) }
+            room: { 
+              id: room.id, 
+              name: room.name, 
+              description: room.description, 
+              exits: Object.keys(room.exits), 
+              monsters: getMonsterNamesInRoom(room.id), 
+              items: getItemNamesInRoom(room.id)
+            }
           });
           break;
         }
@@ -173,6 +204,16 @@ wss.on("connection", (socket) => {
               connected.currentHealth = connected.maxHealth; // full heal on level up, classic RPG feel
               send(socket, { type: "COMBAT_LOG", message: `You leveled up! You are now level ${connected.level}.` });
             }
+
+            const droppedItems = rollLoot(template.loot);
+            for (const templateId of droppedItems) {
+              roomItemManager.addItem(connected.currentRoomId, templateId);
+            }
+
+            if (droppedItems.length > 0) {
+              const names = droppedItems.map(id => itemTemplates[id].name).join(", ");
+              broadcastToRoom(connected.currentRoomId, { type: "COMBAT_LOG", message: `The ${template.name} drops: ${names}` });
+            }
             break;
           }
 
@@ -186,10 +227,37 @@ wss.on("connection", (socket) => {
             connected.currentRoomId = "dark_forest_entrance"; // respawn point
             await updatePlayerRoom(connected.playerId, connected.currentRoomId);
             send(socket, { type: "COMBAT_LOG", message: `You have died and respawned at the entrance.` });
-            send(socket, { type: "ROOM_UPDATE", room: roomToPayload(worldMap.getRoom(connected.currentRoomId)!, getMonsterNamesInRoom(connected.currentRoomId)) });
+            send(socket, { 
+              type: "ROOM_UPDATE", 
+              room: roomToPayload(worldMap.getRoom(connected.currentRoomId)!, 
+              getMonsterNamesInRoom(connected.currentRoomId), 
+              getItemNamesInRoom(connected.currentRoomId)) 
+            });
           }
           break;
         }
+
+        case "TAKE": {
+          const roomItems = roomItemManager.getItemsInRoom(connected.currentRoomId);
+          const matchTemplateId = roomItems.find(id => itemTemplates[id].name.toLowerCase() === command.target.toLowerCase());
+
+          if (!matchTemplateId) {
+            send(socket, { type: "ERROR", message: `You don't see a "${command.target}" here.` });
+            break;
+          }
+
+          roomItemManager.removeOneItem(connected.currentRoomId, matchTemplateId);
+          await addItemToInventory(connected.playerId, matchTemplateId);
+          send(socket, { type: "COMBAT_LOG", message: `You take the ${itemTemplates[matchTemplateId].name}.` });
+          break;
+        }
+
+        case "INVENTORY": {
+          const items = await getInventory(connected.playerId);
+          const names = items.length > 0 ? items.map(id => itemTemplates[id].name).join(", ") : "nothing";
+          send(socket, { type: "COMBAT_LOG", message: `You are carrying: ${names}` });
+          break;
+}
 
         case "UNKNOWN": {
           send(socket, { type: "ERROR", message: `Unknown command: "${command.raw}"` });
