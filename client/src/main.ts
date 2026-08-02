@@ -3,6 +3,7 @@ import type { ClientMessage, ServerMessage } from "shared/types/messages";
 const output = document.getElementById("output")!;
 const form = document.getElementById("command-form") as HTMLFormElement;
 const input = document.getElementById("command-input") as HTMLInputElement;
+const statsContent = document.getElementById("stats-content")!;
 
 function log(text: string, className = "") {
   const line = document.createElement("div");
@@ -10,6 +11,21 @@ function log(text: string, className = "") {
   line.textContent = text;
   output.appendChild(line);
   output.scrollTop = output.scrollHeight;
+}
+
+function renderStats(stats: {
+  name: string; level: number; xp: number; xpToNextLevel: number;
+  currentHealth: number; maxHealth: number;
+  equippedWeapon: string | null; equippedArmor: string | null;
+}) {
+  statsContent.innerHTML = `
+    <div><strong>${stats.name}</strong></div>
+    <div>Level ${stats.level}</div>
+    <div>HP: ${stats.currentHealth} / ${stats.maxHealth}</div>
+    <div>XP: ${stats.xp} / ${stats.xpToNextLevel}</div>
+    <div>Weapon: ${stats.equippedWeapon ?? "none"}</div>
+    <div>Armor: ${stats.equippedArmor ?? "none"}</div>
+  `;
 }
 
 const playerName = prompt("Enter your character name:") ?? "adventurer";
@@ -55,6 +71,9 @@ function handleServerMessage(message: ServerMessage) {
       break;
     case "COMBAT_LOG":
       log(message.message, "combat");
+      break;
+    case "PLAYER_STATS":
+      renderStats(message.stats);
       break;
     case "ERROR":
       log(message.message, "error");

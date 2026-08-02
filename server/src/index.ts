@@ -17,6 +17,7 @@ import { rollLoot } from "./game/items/lootRoll";
 import { RoomItemManager } from "./game/items/RoomItemManager";
 import { itemTemplates } from "./game/items/itemTemplates";
 import { getEffectiveAttack, getEffectiveDefense } from "./game/combat/effectiveStats";
+import { xpToNextLevel } from "./game/progression/leveling";
 
 const app = express();
 app.use(express.json());
@@ -79,6 +80,22 @@ function getItemNamesInRoom(roomId: string): string[] {
   return roomItemManager.getItemsInRoom(roomId).map(templateId => itemTemplates[templateId].name);
 }
 
+function sendStatsUpdate(connected: ConnectedPlayer) {
+  send(connected.socket, {
+    type: "PLAYER_STATS",
+    stats: {
+      name: connected.playerName,
+      level: connected.level,
+      xp: connected.xp,
+      xpToNextLevel: xpToNextLevel(connected.level),
+      currentHealth: connected.currentHealth,
+      maxHealth: connected.maxHealth,
+      equippedWeapon: connected.equippedWeapon ? itemTemplates[connected.equippedWeapon].name : null,
+      equippedArmor: connected.equippedArmor ? itemTemplates[connected.equippedArmor].name : null
+    }
+  });
+}
+
 wss.on("connection", (socket) => {
   socket.on("message", async (data) => {
     const message: ClientMessage = JSON.parse(data.toString());
@@ -111,6 +128,8 @@ wss.on("connection", (socket) => {
           items: getItemNamesInRoom(room.id)
         }
       });
+
+      sendStatsUpdate(connectedPlayers.get(socket)!); // Send initial stats
 
       broadcastToRoom(room.id, { type: "PLAYER_ENTERED", playerName: player.name }, socket);
     }
@@ -194,6 +213,7 @@ wss.on("connection", (socket) => {
 
           await updateEquipment(connected.playerId, connected.equippedWeapon, connected.equippedArmor);
           send(socket, { type: "COMBAT_LOG", message: `You equip the ${item.name}.` });
+          sendStatsUpdate(connectedPlayers.get(socket)!); // Send updated stats after equipping item
           break;
         }
 
@@ -234,6 +254,8 @@ wss.on("connection", (socket) => {
               send(socket, { type: "COMBAT_LOG", message: `You leveled up! You are now level ${connected.level}.` });
             }
 
+            sendStatsUpdate(connectedPlayers.get(socket)!); // Send updated stats after gaining XP and possibly leveling up
+
             const droppedItems = rollLoot(template.loot);
             for (const templateId of droppedItems) {
               roomItemManager.addItem(connected.currentRoomId, templateId);
@@ -251,6 +273,7 @@ wss.on("connection", (socket) => {
           const counter = resolveAttack(template.attackPower, playerDefense, connected.currentHealth);
           connected.currentHealth -= counter.damageDealt;
           send(socket, { type: "COMBAT_LOG", message: `The ${template.name} hits you for ${counter.damageDealt} damage.` });
+          sendStatsUpdate(connectedPlayers.get(socket)!); // Send updated stats after taking damage
 
           if (connected.currentHealth <= 0) {
             connected.currentHealth = connected.maxHealth; // simple respawn: full heal

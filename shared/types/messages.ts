@@ -48,10 +48,25 @@ export interface CombatLogMessage {
   message: string;
 }
 
+export interface PlayerStatsMessage {
+  type: "PLAYER_STATS";
+  stats: {
+    name: string;
+    level: number;
+    xp: number;
+    xpToNextLevel: number;
+    currentHealth: number;
+    maxHealth: number;
+    equippedWeapon: string | null;
+    equippedArmor: string | null;
+  };
+}
+
 export type ServerMessage = 
   | RoomUpdateMessage
   | PlayerEnteredMessage 
   | PlayerLeftMessage 
   | PlayerSaidMessage 
   | ErrorMessage
-  | CombatLogMessage;
+  | CombatLogMessage
+  | PlayerStatsMessage;
