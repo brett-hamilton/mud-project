@@ -81,8 +81,6 @@ function handleServerMessage(message: ServerMessage) {
   }
 }
 
-const directions = ["north", "south", "east", "west", "up", "down"];
-
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
